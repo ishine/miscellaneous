@@ -1,0 +1,200 @@
+/***************************************************************************
+ *
+ *  FILE NAME:  decoder.c
+ *
+ *         Usage : decoder  bitstream_file  synth_file
+ *
+ *         Format for bitstream_file:
+ *           One word (2-byte) for bad frame indication (BFI) flag bit
+ *               0x0000 -> good frame;  0x0001 -> bad frame
+ *           244  words (2-byte) containing 244 bits.
+ *               Bit 0 = 0x0000 and Bit 1 = 0x0001
+ *           One word (2-byte) for ternary Silence Descriptor (SID) flag
+ *               0x0000 -> inactive (no detected speech activity);
+ *               0x0001 -> active
+ *           One word (2-byte) for Time Alignment Flag (TAF) bit
+ *               0x0000 -> inactive (no transmission of speech frames);
+ *               0x0001 -> active
+ *
+ *         Format for synth_file:
+ *           Synthesis is written to a binary file of 16 bits data.
+ *
+ ***************************************************************************/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include "typedef.h"
+#include "n_stack.h"
+#include "basic_op.h"
+#include "sig_proc.h"
+#include "count.h"
+#include "codec.h"
+#include "cnst.h"
+#include "d_homing.h"
+
+
+/* These constants define the number of consecutive parameters
+   that function decoder_homing_frame_test() checks */
+
+#define WHOLE_FRAME 57
+#define TO_FIRST_SUBFRAME 18
+
+
+Word16 synth_buf[L_FRAME + M];
+
+/* L_FRAME, M, PRM_SIZE, AZ_SIZE, SERIAL_SIZE: defined in "cnst.h" */
+
+/*-----------------------------------------------------------------*
+ *             Global variables                                    *
+ *-----------------------------------------------------------------*/
+
+#if (WMOPS)
+Word16 dtx_mode = 0;
+
+#endif
+
+/*-----------------------------------------------------------------*
+ *            Main decoder routine                                 *
+ *-----------------------------------------------------------------*/
+
+int main (int argc, char *argv[]) {
+  Word16 *synth;              /* Synthesis                  */
+  Word16 parm[PRM_SIZE + 1];  /* Synthesis parameters       */
+  Word16 serial[SERIAL_SIZE + 2]; /* Serial stream              */
+  Word16 Az_dec[AZ_SIZE];     /* Decoded Az for post-filter */
+  /* in 4 subframes, length= 44 */
+  Word16 i, frame, temp;
+  FILE *f_syn, *f_serial;
+
+  Word16 TAF, SID_flag;
+
+  Word16 reset_flag;
+  static Word16 reset_flag_old = 1;
+
+  proc_head ("Decoder");
+
+  /*-----------------------------------------------------------------*
+   *           Read passed arguments and open in/out files           *
+   *-----------------------------------------------------------------*/
+
+  if (argc != 3) {
+    fprintf (stderr,
+             "   Usage:\n\n   decoder  bitstream_file  synth_file\n");
+    fprintf (stderr, "\n");
+    exit (1);
+  }
+  /* Open file for synthesis and packed serial stream */
+
+  if ((f_serial = fopen (argv[1], "rb")) == NULL) {
+    fprintf (stderr, "Input file '%s' does not exist !!\n", argv[1]);
+    exit (0);
+  } else
+    fprintf (stderr, "Input bitstream file:   %s\n", argv[1]);
+
+  if ((f_syn = fopen (argv[2], "wb")) == NULL) {
+    fprintf (stderr, "Cannot open file '%s' !!\n", argv[2]);
+    exit (0);
+  } else
+    fprintf (stderr, "Synthesis speech file:   %s\n", argv[2]);
+
+  /*-----------------------------------------------------------------*
+   *           Initialization of decoder                             *
+   *-----------------------------------------------------------------*/
+
+  synth = synth_buf + M;
+
+  reset_dec (); /* Bring the decoder and receive DTX to the initial state */
+
+#if (WMOPS)
+  Init_WMOPS_counter ();
+#endif
+
+  /*-----------------------------------------------------------------*
+   *            Loop for each "L_FRAME" speech data                  *
+   *-----------------------------------------------------------------*/
+
+  frame = 0;
+
+  while (fread (serial, sizeof (Word16), 247, f_serial) == 247) {
+#if (WMOPS)
+    fprintf (stderr, "frame=%d  ", ++frame);
+#else
+    fprintf (stderr, "\nframe=%d  ", ++frame);
+#endif
+
+#if (WMOPS)
+    Reset_WMOPS_counter (); /* reset WMOPS counter for the new frame */
+#endif
+
+    SID_flag = serial[245];         /* Receive SID flag */
+    TAF = serial[246];              /* Receive TAF flag */
+
+    Bits2prm_12k2 (serial, parm);   /* serial to parameters   */
+
+#if (WMOPS)
+    fwc ();                         /* function worst case */
+#endif
+
+    if (parm[0] == 0) {             /* BFI == 0, perform DHF check */
+      if (reset_flag_old == 1)    /* Check for second and further
+                                           successive DHF (to first subfr.) */
+      {
+        reset_flag = decoder_homing_frame_test (&parm[1],
+                                                TO_FIRST_SUBFRAME);
+      } else {
+        reset_flag = 0;
+      }
+    } else                          /* BFI==1, bypass DHF check (frame
+                                           is taken as not being a DHF) */
+    {
+      reset_flag = 0;
+    }
+
+    if ((reset_flag != 0) && (reset_flag_old != 0)) {
+      /* Force the output to be the encoder homing frame pattern */
+
+      for (i = 0; i < L_FRAME; i++) {
+        synth[i] = EHF_MASK;
+      }
+    } else {
+      Decoder_12k2 (parm, synth, Az_dec, TAF, SID_flag);/* Synthesis */
+
+      Post_Filter (synth, Az_dec);                      /* Post-filter */
+#if (WMOPS)
+      fwc ();             /* function worst case */
+#endif
+
+      for (i = 0; i < L_FRAME; i++)
+        /* Upscale the 15 bit linear PCM to 16 bits,
+           then truncate to 13 bits */
+      {
+        temp = efr_shl (synth[i], 1);
+        synth[i] = temp & 0xfff8;       logic16 (); move16 ();
+      }
+
+#if (WMOPS)
+      fwc ();                             /* function worst case */
+#endif
+
+#if (WMOPS)
+      WMOPS_output (dtx_mode);/* output WMOPS values for current frame */
+#endif
+    }                       /* else */
+
+    fwrite (synth, sizeof (Word16), L_FRAME, f_syn);
+
+    /* BFI == 0, perform check for first DHF (whole frame) */
+    if ((parm[0] == 0) && (reset_flag_old == 0)) {
+      reset_flag = decoder_homing_frame_test (&parm[1], WHOLE_FRAME);
+    }
+
+    if (reset_flag != 0) {
+      /* Bring the decoder and receive DTX to the home state */
+      reset_dec ();
+    }
+    reset_flag_old = reset_flag;
+
+  }                           /* while */
+
+  return 0;
+}

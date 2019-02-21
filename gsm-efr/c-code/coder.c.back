@@ -1,0 +1,189 @@
+/***************************************************************************
+ *
+ *  FILE NAME:  CODER.C
+ *
+ *  Main program of the EFR coder at 12.2 kbit/s.
+ *
+ *    Usage : coder speech_file  bitstream_file
+ *
+ *    Format for speech_file:
+ *      Speech is read from a binary file of 16 bits data.
+ *
+ *    Format for bitstream_file:
+ *      244  words (2-byte) containing 244 bits.
+ *          Bit 0 = 0x0000 and Bit 1 = 0x0001
+ *      One word (2-byte) for voice activity decision (VAD) flag bit
+ *          0x0000 -> inactive (no detected speech activity);
+ *          0x0001 -> active
+ *      One word (2-byte) for speech (SP) flag bit
+ *          0x0000 -> inactive (no transmission of speech frames);
+ *          0x0001 -> active
+ *
+ ***************************************************************************/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "typedef.h"
+#include "basic_op.h"
+#include "sig_proc.h"
+#include "count.h"
+#include "codec.h"
+#include "cnst.h"
+#include "n_stack.h"
+#include "e_homing.h"
+
+#include "dtx.h"
+
+Word16 dtx_mode;
+extern Word16 txdtx_ctrl;
+
+/* L_FRAME, M, PRM_SIZE, AZ_SIZE, SERIAL_SIZE: defined in "cnst.h" */
+
+int main (int argc, char *argv[]) {
+  FILE *f_speech;             /* File of speech data                   */
+  FILE *f_serial;             /* File of serial bits for transmission  */
+
+  extern Word16 *new_speech;  /* Pointer to new speech data            */
+
+  Word16 prm[PRM_SIZE];       /* Analysis parameters.                  */
+  Word16 serial[SERIAL_SIZE - 1]; /* Output bitstream buffer               */
+  Word16 syn[L_FRAME];        /* Buffer for synthesis speech           */
+
+  Word16 frame;
+
+  Word16 vad, sp;
+
+  Word16 reset_flag;
+  Word16 i;
+
+  proc_head ("Encoder");
+
+  /*----------------------------------------------------------------------*
+   * Open speech file and result file (output serial bit stream)          *
+   *----------------------------------------------------------------------*/
+
+  if ((argc < 3) || (argc > 4)) {
+    fprintf (stderr,
+             "   Usage:\n\n   coder  speech_file  bitstream_file  <dtx|nodtx>\n");
+    fprintf (stderr, "\n");
+    exit (1);
+  }
+  if ((f_speech = fopen (argv[1], "rb")) == NULL) {
+    fprintf (stderr, "Error opening input file  %s !!\n", argv[1]);
+    exit (0);
+  }
+  fprintf (stderr, " Input speech file:  %s\n", argv[1]);
+
+  if ((f_serial = fopen (argv[2], "wb")) == NULL) {
+    fprintf (stderr, "Error opening output bitstream file %s !!\n", argv[2]);
+    exit (0);
+  }
+  fprintf (stderr, " Output bitstream file:  %s\n", argv[2]);
+
+  dtx_mode = 0;               /* DTX disabled by default */
+
+  if (argc == 4) {
+    if (strcmp (argv[3], "nodtx") == 0) {
+      dtx_mode = 0;
+    } else if (strcmp (argv[3], "dtx") == 0) {
+      dtx_mode = 1;
+    } else {
+      fprintf (stderr, "\nWrong DTX switch:  %s !!\n", argv[3]);
+      exit (1);
+    }
+  }
+  if (dtx_mode == 1) {
+    fprintf (stderr, " DTX:  enabled\n");
+  } else {
+    fprintf (stderr, " DTX:  disabled\n");
+  }
+
+  /*-----------------------------------------------------------------------*
+   * Initialisation of the coder.                                          *
+   *-----------------------------------------------------------------------*/
+
+  reset_enc (); /* Bring the encoder, VAD and DTX to the initial state */
+
+  Init_WMOPS_counter ();
+
+  /* Loop for each "L_FRAME" speech data. */
+
+  frame = 0;
+  while (fread (new_speech, sizeof (Word16), L_FRAME, f_speech) == L_FRAME) {
+#if(WMOPS)
+    fprintf (stderr, "frame=%d  ", ++frame);
+#else
+    fprintf (stderr, "\nframe=%d  ", ++frame);
+#endif
+
+    /* Check whether this frame is an encoder homing frame */
+    reset_flag = encoder_homing_frame_test (new_speech);
+
+#if (WMOPS)
+    Reset_WMOPS_counter (); /* reset WMOPS counter for the new frame */
+#endif
+
+    for (i = 0; i < L_FRAME; i++) { /* Delete the 3 LSBs (13-bit input) */
+      new_speech[i] = new_speech[i] & 0xfff8;  logic16 (); move16 ();
+    }
+
+    Pre_Process (new_speech, L_FRAME);           /* filter + downscaling */
+
+#if (WMOPS)
+    fwc ();                 /* function worst case */
+#endif
+
+    Coder_12k2 (prm, syn);  /* Find speech parameters   */
+
+    test (); logic16 ();
+    if ((txdtx_ctrl & TX_SP_FLAG) == 0) {
+      /* Write comfort noise parameters into the parameter frame.
+      Use old parameters in case SID frame is not to be updated */
+      CN_encoding (prm, txdtx_ctrl);
+    }
+    Prm2bits_12k2 (prm, &serial[0]); /* Parameters to serial bits */
+
+#if (WMOPS)
+    fwc ();                 /* function worst case */
+#endif
+
+    test (); logic16 ();
+    if ((txdtx_ctrl & TX_SP_FLAG) == 0) {
+      /* Insert SID codeword into the serial parameter frame */
+      sid_codeword_encoding (&serial[0]);
+    }
+
+#if (WMOPS)
+    fwc ();                 /* function worst case */
+#endif
+
+#if (WMOPS)
+    WMOPS_output (dtx_mode);/* output speech encoder WMOPS values
+        for current frame */
+#endif
+
+    /* Write the bit stream to file */
+    fwrite (serial, sizeof (Word16), (SERIAL_SIZE - 1), f_serial);
+
+    /* Write the VAD- and SP-flags to file after the speech
+    parameter bit stream */
+    vad = 0;
+    sp = 0;
+
+    if ((txdtx_ctrl & TX_VAD_FLAG) != 0) {
+      vad = 1;
+    }
+    if ((txdtx_ctrl & TX_SP_FLAG) != 0) {
+      sp = 1;
+    }
+    fwrite (&vad, sizeof (Word16), 1, f_serial);
+    fwrite (&sp, sizeof (Word16), 1, f_serial);
+
+    if (reset_flag != 0) {
+      reset_enc (); /*Bring the encoder, VAD and DTX to the home state */
+    }
+  }
+
+  return (0);
+}
