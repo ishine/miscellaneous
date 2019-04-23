@@ -65,8 +65,9 @@ int main(int argc, char** argv) {
       gwpe_opts.lowerfreq = 50;
       gwpe_opts.upperfreq = fs / 2;
       gwpe_opts.fftlen = fftlen;
+      gwpe_opts.delta = 3;
       if (num_chan == 1) {
-        gwpe_opts.filterlen = 30;
+        gwpe_opts.filterlen = 16;
       } else {
         gwpe_opts.filterlen = 16;
       }

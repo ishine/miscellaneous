@@ -11,6 +11,6 @@ include_directories("/Users/danhui/kaldi/src/" "/Users/danhui/kaldi/tools/openfs
 aux_source_directory(${CMAKE_CURRENT_LIST_DIR}/dereverb base-src)
 add_library(gwpe ${base-src})
 
-link_directories("/Users/danhui/kaldi/src/util" "/Users/danhui/kaldi/src/base" "/Users/danhui/kaldi/src/matrix" "/Users/danhui/kaldi/src/feat")
+link_directories("/Users/danhui/kaldi/src/lib/")
 add_executable(apply-gwpe apply-gwpe.cc)
 target_link_libraries(apply-gwpe gwpe kaldi-base.a kaldi-util.a kaldi-matrix.a kaldi-feat.a)

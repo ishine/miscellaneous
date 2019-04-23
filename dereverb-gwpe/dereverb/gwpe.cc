@@ -81,9 +81,9 @@ float GeneralizedWpe::EstimateInvLambda(const Eigen::MatrixXcf &out_spec, int ib
 
   // psd_mat.middleCols();
   float lambda = psd_mat.cwiseAbs2().mean();
-  lambda = std::max(lambda, 1000.0f);
-  lambda = 1.0f / lambda;
-  lambda = std::min(lambda, 5e-8f);
+  // lambda = std::max(lambda, 1000.0f);
+  lambda = 1.0f / (lambda + 1.0f);
+  // lambda = std::min(lambda, 5e-8f);
   return lambda;
 }
 
