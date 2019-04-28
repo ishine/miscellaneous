@@ -7,5 +7,8 @@ Currently supported codecs are:
 - G729
 - AMR-NB
 
+Note these simulators use kaldi IO interface to support Linux cmd pipeline.
+
 A C++ implementation of multi-channel Generalized Weighted Prediction Error(GWPE) for speech dereverberation is also provided.
-See also \url{https://github.com/fgnt/nara_wpe}
+We use Eigen3 library as the basic math lib.
+See also [nara_wpe](https://github.com/fgnt/nara_wpe).
