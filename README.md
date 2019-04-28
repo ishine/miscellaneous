@@ -7,4 +7,5 @@ Currently supported codecs are:
 - G729
 - AMR-NB
 
-A C++ implementation of multi-channel Generalized Weighted Prediction Error for speech dereverberation is also provided.
+A C++ implementation of multi-channel Generalized Weighted Prediction Error(GWPE) for speech dereverberation is also provided.
+See also \url{https://github.com/fgnt/nara_wpe}
