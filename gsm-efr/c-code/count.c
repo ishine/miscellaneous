@@ -54,23 +54,23 @@ Word32 DeltaWeightedOperation () {
 }
 
 void move16 (void) {
-  counter.DataMove16++;
+  // counter.DataMove16++;
 }
 
 void move32 (void) {
-  counter.DataMove32++;
+  // counter.DataMove32++;
 }
 
 void test (void) {
-  counter.Test++;
+  // counter.Test++;
 }
 
 void logic16 (void) {
-  counter.Logic16++;
+  // counter.Logic16++;
 }
 
 void logic32 (void) {
-  counter.Logic32++;
+  // counter.Logic32++;
 }
 
 void Init_WMOPS_counter (void) {
@@ -102,13 +102,13 @@ void Reset_WMOPS_counter (void) {
 }
 
 Word32 fwc (void) {                    /* function worst case */
-  Word32 tot;
+  Word32 tot = 0;
 
-  tot = DeltaWeightedOperation ();
-  if (tot > wc[funcid])
-    wc[funcid] = tot;
+  // tot = DeltaWeightedOperation ();
+  // if (tot > wc[funcid])
+  //   wc[funcid] = tot;
 
-  funcid++;
+  // funcid++;
 
   return (tot);
 }

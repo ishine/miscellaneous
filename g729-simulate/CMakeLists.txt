@@ -17,6 +17,6 @@ target_link_libraries(encoder g729fp)
 add_executable(decoder ${CMAKE_CURRENT_LIST_DIR}/src/decoderTest.c)
 target_link_libraries(decoder g729fp)
 
-link_directories("/Users/danhui/kaldi/src/util" "/Users/danhui/kaldi/src/base" "/Users/danhui/kaldi/src/matrix" "/Users/danhui/kaldi/src/feat")
+link_directories("/Users/danhui/kaldi/src/lib/")
 add_executable(simulate-g729 simulate-g729.cc)
 target_link_libraries(simulate-g729 g729fp kaldi-base.a kaldi-util.a kaldi-matrix.a kaldi-feat.a)

@@ -13,6 +13,7 @@
 #include "c-code/e_homing.h"
 #include "c-code/d_homing.h"
 #include "c-code/dtx.h"
+#include "base/timer.h"
 Word16 dtx_mode;
 extern Word16 txdtx_ctrl;
 
@@ -38,26 +39,23 @@ void GsmEfrWrapper::Encode(const char *pcm_in, int in_samples, short * efr_enc) 
       new_speech[isample] =  pcm_short[iframe * L_FRAME + isample];
     }
     /* Check whether this frame is an encoder homing frame */
-    Word16 reset_flag = encoder_homing_frame_test (new_speech);
+    // Word16 reset_flag = encoder_homing_frame_test (new_speech);
 
     for (int i = 0; i < L_FRAME; i++) { /* Delete the 3 LSBs (13-bit input) */
-      new_speech[i] = new_speech[i] & 0xfff8;  logic16 (); move16 ();
+      new_speech[i] = new_speech[i] & 0xfff8;
+      // logic16 ();
+      // move16 ();
     }
-
     Pre_Process (new_speech, L_FRAME);           /* filter + downscaling */
-
-
     Coder_12k2 (prm, syn);  /* Find speech parameters   */
-
-    test (); logic16 ();
+    // test (); logic16 ();
     if ((txdtx_ctrl & TX_SP_FLAG) == 0) {
       /* Write comfort noise parameters into the parameter frame.
       Use old parameters in case SID frame is not to be updated */
       CN_encoding (prm, txdtx_ctrl);
     }
     Prm2bits_12k2 (prm, &serial[0]); /* Parameters to serial bits */
-
-    test (); logic16 ();
+    // test (); logic16 ();
     if ((txdtx_ctrl & TX_SP_FLAG) == 0) {
       /* Insert SID codeword into the serial parameter frame */
       sid_codeword_encoding (&serial[0]);
@@ -72,20 +70,13 @@ void GsmEfrWrapper::Encode(const char *pcm_in, int in_samples, short * efr_enc) 
     Word16 vad = 0;
     Word16 sp = 0;
 
-    if ((txdtx_ctrl & TX_VAD_FLAG) != 0) {
-      vad = 1;
-    }
-    if ((txdtx_ctrl & TX_SP_FLAG) != 0) {
-      sp = 1;
-    }
+    if ((txdtx_ctrl & TX_VAD_FLAG) != 0) {vad = 1;}
+    if ((txdtx_ctrl & TX_SP_FLAG) != 0) {sp = 1;}
     efr_enc[pos] = vad; pos += 1;
     efr_enc[pos] = sp; pos += 1;
-    // fwrite (&vad, sizeof (Word16), 1, f_serial);
-    // fwrite (&sp, sizeof (Word16), 1, f_serial);
-
-    if (reset_flag != 0) {
-      reset_enc (); /*Bring the encoder, VAD and DTX to the home state */
-    }
+    // if (reset_flag != 0) {
+    //   reset_enc (); Bring the encoder, VAD and DTX to the home state
+    // }
   }
 }
 
@@ -270,7 +261,7 @@ void GsmEfrWrapper::Simulate(const char * pcm_in, int in_samples, char * pcm_out
   num_frames_ = in_samples / samples_per_frame_;
   short *efr_enc = new short [num_frames_ * 246];
   short *efr_dec = new short[num_frames_ * 247];
-  // std::cout << "num_frames_=" << num_frames_ << "\n";
+
   Encode(pcm_in, in_samples, efr_enc);
   EncodeToDecode(efr_enc, efr_dec);
   Decode(efr_dec, num_frames_, pcm_out);
